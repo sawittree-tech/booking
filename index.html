@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจำหน่ายบัตรคอนเสิร์ต The 6th PSU WIT ORCHESTRA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            transition: background-color 0.5s ease, color 0.5s ease;
+            box-sizing: border-box;
+        }
+        .seat {
+            width: 32px; height: 32px; border: 1px solid #94a3b8; border-radius: 5px; cursor: pointer;
+            transition: all 0.2s ease-in-out; 
+            display: flex; align-items: center; justify-content: center;
+            font-size: 7px; 
+            flex-shrink: 0; line-height: 1; padding: 1px; text-align: center;
+            overflow: hidden; 
+            white-space: nowrap; 
+        }
+        .theme-day .seat { 
+            border-color: #334155; /* slate-700 */
+        }
+        @media (max-width: 768px) { .seat { width: 28px; height: 28px; font-size: 6px; } } 
+        .seat.selected { background-color: #16a34a; color: #fff; border-color: #16a34a; } /* green-600 */
+        .seat.unavailable { background-color: #facc15; color: #000; cursor: not-allowed; border-color: #facc15; } /* yellow-400 */
+        .seat.paid { background-color: #dc2626; cursor: not-allowed; border-color: #dc2626; } /* red-600 */
+        
+        .seat:not(.selected):not(.unavailable):not(.paid):hover {
+            transform: scale(1.15) translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 10;
+        }
+
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 60; 
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        main > section {
+            transition: opacity 0.3s ease-in-out;
+        }
+        main > section.hidden {
+           opacity: 0;
+           pointer-events: none;
+           position: absolute;
+           left: -9999px;
+           width: 100%;
+        }
+         #timer-message { 
+             transition: opacity 0.3s ease-in-out; 
+             position: sticky;
+             top: 1rem;
+             z-index: 40;
+         }
+        
+        .plan-block {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: 600;
+            color: white;
+            border-radius: 0.5rem;
+            padding: 0.5rem; 
+            min-height: 40px; 
+            box-sizing: border-box; 
+            width: 100%; 
+            font-size: 0.75rem; 
+            line-height: 1;
+        }
+        @media (min-width: 768px) {
+            .plan-block {
+                font-size: 1rem; 
+                min-height: 60px;
+                padding: 0.75rem;
+            }
+        }
+
+        .plan-block:hover:not(.cursor-not-allowed) {
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .round-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .round-card.inactive {
+             opacity: 0.6;
+             filter: grayscale(30%);
+        }
+         .round-card.inactive:hover {
+            opacity: 1;
+            filter: grayscale(0%);
+             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* --- ⭐️ NEW: CSS สำหรับ Message Modal --- */
+        .modal-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem auto;
+            flex-shrink: 0;
+        }
+        .modal-icon.error {
+            background-color: #fee2e2; /* red-100 */
+            color: #ef4444; /* red-500 */
+        }
+        .modal-icon.success {
+            background-color: #dcfce7; /* green-100 */
+            color: #22c55e; /* green-500 */
+        }
+        .modal-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+        /* --- ⭐️ END: CSS สำหรับ Message Modal --- */
+
+    </style>
+</head>
+<body class="antialiased bg-[#1a1a2e] text-[#e0e0e0]">
+    <div id="app" class="container mx-auto p-4 md:p-8 relative">
+
+        <!-- Tooltip Element -->
+        <div id="tooltip" class="hidden absolute z-50 p-2 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg shadow-sm">
+            <span id="tooltip-title" class="font-bold"></span><br>
+            <span id="tooltip-price"></span>
+        </div>
+
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="text-center text-white"><div class="spinner mx-auto"></div><p class="mt-3 text-lg">กำลังประมวลผล...</p></div>
+        </div>
+
+        <header class="mb-8">
+             <div id="header-banner" class="w-full h-64 bg-gradient-to-r from-purple-800 via-blue-800 to-indigo-900 rounded-lg shadow-lg flex items-center justify-center transition-all duration-500">
+                 <div class="text-center text-white">
+                     <h1 class="text-4xl font-bold mb-2">🎼 The 6th PSU WIT ORCHESTRA 🎼</h1>
+                     <p class="text-xl">การแสดงดนตรีคลาสสิกสุดพิเศษ</p>
+                     <p class="text-lg mt-2">📅 31 มกราคม 2568 | 🏛️ ศูนย์ประชุมนานาชาติฉลองสิริราชสมบัติครบ ๖๐ ปี</p>
+                 </div>
+             </div>
+        </header>
+
+        <main id="mainContent" class="relative">
+            <!-- Timer Message -->
+            <div id="timer-message" class="hidden opacity-0 mb-6 bg-red-600 text-white text-center p-3 rounded-lg shadow-lg">
+                <p>คุณมีเวลา <span id="countdown-timer" class="font-bold text-lg">15:00</span> นาทีในการทำรายการให้เสร็จสิ้น</p>
+            </div>
+
+            <!-- Step 1: Select Round -->
+            <section id="step1" class="bg-[#161625] p-6 rounded-2xl shadow-lg transition-colors duration-500">
+                <h2 class="text-2xl font-bold mb-6 text-center text-yellow-400 step-title">1. เลือกรอบการแสดง</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                    <!-- Round 1 Card -->
+                    <div id="round1Btn" onclick="selectRound(1)" class="round-card bg-gray-700 rounded-lg shadow-sm transition-all duration-300 cursor-pointer overflow-hidden">
+                        <div class="p-4 text-center">
+                            <h3 class="text-xl font-semibold text-white round-card-title">☀️ รอบที่ 1</h3>
+                            <p class="text-gray-300 round-card-subtitle">(13:30-16:00)</p>
+                        </div>
+                        <img src="https://i.postimg.cc/s2kWXJF1/1.png" alt="ผังที่นั่งรอบที่ 1" class="w-full h-auto border-t border-gray-600 round-card-border">
+                    </div>
+                    <!-- Round 2 Card -->
+                    <div id="round2Btn" onclick="selectRound(2)" class="round-card bg-gray-700 rounded-lg shadow-sm transition-all duration-300 cursor-pointer overflow-hidden">
+                        <div class="p-4 text-center">
+                            <h3 class="text-xl font-semibold text-white round-card-title">🌙 รอบที่ 2</h3>
+                            <p class="text-gray-300 round-card-subtitle">(18:30-21:00)</p>
+                        </div>
+                        <img src="https://i.postimg.cc/ZnqXHqhM/2.png" alt="ผังที่นั่งรอบที่ 2" class="w-full h-auto border-t border-gray-600 round-card-border">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 2: Select Zone from Plan -->
+            <section id="step2" class="hidden bg-[#161625] p-6 rounded-2xl shadow-lg transition-colors duration-500">
+                <div class="bg-white p-6 rounded-2xl shadow-lg content-card">
+                    <div class="flex items-center mb-6">
+                        <button onclick="goBackToStep(1)" class="p-2 rounded-full hover:bg-slate-200 transition-colors back-button">
+                            <svg class="w-6 h-6 text-slate-500 hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <div class="ml-4">
+                            <h2 class="text-2xl font-bold text-purple-700 step-title">2. เลือกโซนที่นั่ง</h2>
+                            <p class="text-slate-500 step-subtitle">กรุณาคลิกเลือกโซนที่ท่านสนใจบนผังด้านล่าง (รอบ <span id="selectedRoundText"></span>)</p>
+                        </div>
+                    </div>
+                    
+                    <div id="seatingPlanOverview" class="p-4 md:p-8 bg-slate-100 rounded-lg plan-bg min-h-[200px]"> 
+                        <!-- Interactive seating plan will be generated by JS -->
+                    </div>
+                     
+                    <div class="flex justify-center flex-wrap gap-x-6 gap-y-2 mt-6 text-sm">
+                        <div class="flex items-center"><div class="w-4 h-4 bg-blue-500"></div><span class="ml-2 legend-text">โซน VIP (<span id="zone-1-remaining" class="font-semibold">...</span>)</span></div>
+                        <div class="flex items-center"><div class="w-4 h-4 bg-pink-500"></div><span class="ml-2 legend-text">โซน A (<span id="zone-2-remaining" class="font-semibold">...</span>)</span></div>
+                        <div class="flex items-center"><div class="w-4 h-4 bg-emerald-500"></div><span class="ml-2 legend-text">โซน B (<span id="zone-3-remaining" class="font-semibold">...</span>)</span></div>
+                        <div class="flex items-center"><div class="w-4 h-4 bg-orange-500"></div><span class="ml-2 legend-text">โซน C (<span id="zone-4-remaining" class="font-semibold">...</span>)</span></div>
+                        <div class="flex items-center"><div class="w-4 h-4 bg-yellow-400"></div><span class="ml-2 legend-text">แขกพิเศษ (VVIP)</span></div>
+                    </div>
+
+                    <!-- ⭐️ NEW: "Go to Checkout" button for cross-zone cart -->
+                    <div class="mt-8 text-center">
+                        <button onclick="goToStep(4)" id="checkoutBtnStep2" class="w-full md:w-auto px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>
+                            ไปยังหน้าสรุปการจอง (<span id="cartCountStep2">0</span>)
+                        </button>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Step 3: Select Seats -->
+            <section id="step3" class="hidden bg-[#161625] p-6 rounded-2xl shadow-lg transition-colors duration-500">
+                <div class="bg-white p-6 rounded-2xl shadow-lg content-card">
+                    <div class="flex items-center mb-6">
+                        <button onclick="goBackToStep(2)" class="p-2 rounded-full hover:bg-slate-200 transition-colors back-button">
+                            <svg class="w-6 h-6 text-slate-500 hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <div class="ml-4">
+                            <h2 id="step3Title" class="text-2xl font-bold text-purple-700 step-title">3. เลือกที่นั่ง</h2>
+                            <p class="text-slate-500 step-subtitle">กรุณาเลือกที่นั่งว่างในโซน <span id="selectedBlockText"></span> (รอบ <span class="selectedRoundText"></span>)</p>
+                        </div>
+                    </div>
+                    <div id="seatMapContainer" class="max-h-[50vh] overflow-y-auto p-2 min-h-[200px]">
+                        <!-- Detailed seat map will be generated here -->
+                    </div>
+                    <!-- ⭐️ MODIFIED: ลบแถบ Info Bar ออก และคืนค่า Footer เดิม -->
+                    <div id="seatMapFooter" class="mt-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div class="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm legend-text">
+                            <div class="flex items-center"><div class="w-4 h-4 border border-slate-400 rounded mr-2 legend-seat-available"></div><span>ว่าง (<span id="legend-available-count">0</span>)</span></div>
+                            <div class="flex items-center"><div class="w-4 h-4 bg-green-500 rounded mr-2"></div><span>ที่เลือก (<span id="legend-selected-count">0</span>)</span></div>
+                            <div class="flex items-center"><div class="w-4 h-4 bg-yellow-400 rounded mr-2"></div><span>จองแล้ว (<span id="legend-booked-count">0</span>)</span></div>
+                            <div class="flex items-center"><div class="w-4 h-4 bg-red-500 rounded mr-2"></div><span>ชำระเงินแล้ว (<span id="legend-paid-count">0</span>)</span></div>
+                        </div>
+                        <button onclick="goToStep(4)" id="continueToStep4" class="w-full md:w-auto px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>
+                            ดำเนินการต่อ (<span id="selectedCount">0</span>)
+                        </button>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Step 4: Customer Information -->
+            <section id="step4" class="hidden bg-[#161625] p-6 rounded-2xl shadow-lg transition-colors duration-500 content-card">
+                <div class="flex items-center mb-6">
+                    <!-- ⭐️ MODIFIED: Back button now goes to Step 2 (Zone Map) -->
+                    <button onclick="goBackToStep(2)" class="p-2 rounded-full hover:bg-gray-700 transition-colors back-button">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <h2 class="ml-4 text-2xl font-bold text-yellow-400 step-title">4. ข้อมูลผู้จอง</h2>
+                </div>
+                <form id="customerForm" class="max-w-2xl mx-auto space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium mb-1 form-label">ชื่อ *</label>
+                            <input type="text" id="firstName" required class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1 form-label">นามสกุล *</label>
+                            <input type="text" id="lastName" required class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 form-label">อีเมล *</label>
+                        <input type="email" id="email" required class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 form-label">เบอร์โทรศัพท์ *</label>
+                        <!-- ⭐️ MODIFIED: เพิ่ม pattern และ title สำหรับการตรวจสอบเบอร์โทร -->
+                        <input type="tel" id="phone" required class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" 
+                               pattern="[0-9]{9,10}" title="กรุณากรอกเบอร์โทรศัพท์ 9-10 หลัก (เฉพาะตัวเลข)">
+                    </div>
+                    <div class="summary-box bg-gray-800 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-3 text-yellow-400">สรุปการจอง</h3>
+                        <div id="orderSummary"></div>
+                        <div class="border-t border-gray-600 mt-3 pt-3">
+                            <div class="total-text flex justify-between text-xl font-bold text-green-400">
+                                <span>ยอดรวมทั้งหมด:</span>
+                                <span id="totalAmount">0 บาท</span>
+                            </div>
+                            <!-- ⭐️ FIX: ลบปุ่ม "ดำเนินการต่อ" (ที่อยู่ผิดที่) ออกจาก Step 4 -->
+                        </div>
+                    </div>
+                    <!-- ⭐️ FIX: คืนค่าปุ่ม "ไปยังหน้าชำระเงิน" และแท็กปิด </form> ที่ถูกต้อง -->
+                    <div class="text-center">
+                        <button type="button" onclick="goToStep(5)" class="w-full md:w-auto px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                            ไปยังหน้าชำระเงิน
+                        </button>
+                    </div>
+                </form>
+            </section>
+            
+            <!-- Step 5: Payment and Slip Upload -->
+            <section id="step5" class="hidden bg-[#161625] p-6 rounded-2xl shadow-lg transition-colors duration-500 content-card">
+                <div class="flex items-center mb-6">
+                    <button onclick="goBackToStep(4)" class="p-2 rounded-full hover:bg-gray-700 transition-colors back-button">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <h2 class="ml-4 text-2xl font-bold text-yellow-400 step-title">5. ชำระเงินและแนบสลิป</h2>
+                </div>
+                <form id="paymentForm" class="max-w-2xl mx-auto space-y-6">
+                    <div class="info-box bg-blue-900 p-4 rounded-lg">
+                        <h4 class="text-lg font-semibold mb-4 text-yellow-400 text-center">💳 ข้อมูลการชำระเงิน</h4>
+                        <div class="flex flex-col items-center space-y-3">
+                            <p class="text-sm text-center info-text">สแกน QR Code เพื่อโอนเงิน</p>
+                            <div class="bg-white p-3 rounded-lg shadow-md">
+                                <img src="https://i.postimg.cc/pdZNMPpN/QR-Code.jpg" alt="Payment QR Code" class="w-36 h-36 object-contain" onerror="this.src='https://placehold.co/144x144/FFFFFF/000000?text=QR+Error';">
+                            </div>
+                            <a href="https://i.postimg.cc/pdZNMPpN/QR-Code.jpg" target="_blank" rel="noopener noreferrer" class="link-text text-xs text-blue-300 hover:text-blue-100 underline">(ดู QR Code ขนาดใหญ่)</a>
+                            <p class="text-orange-600 font-semibold text-center text-sm pt-3">⚠️ กรุณาโอนเงินตามยอดรวมที่แสดงด้านล่างให้ถูกต้อง</p>
+                        </div>
+                    </div>
+                    <div class="summary-box bg-gray-800 p-4 rounded-lg">
+                        <div class="total-text flex justify-between text-xl font-bold text-green-400">
+                            <span>ยอดที่ต้องชำระ:</span>
+                            <span id="paymentTotalAmount">0 บาท</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 form-label">แนบสลิปการชำระเงิน *</label>
+                        <input type="file" id="paymentSlip" accept="image/*,.pdf" required class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700">
+                        <p class="text-xs text-gray-400 mt-1 step-subtitle">รองรับไฟล์ JPG, PNG, PDF ขนาดไม่เกิน 5MB</p>
+                        <div id="filePreview" class="mt-2 hidden"><div class="flex items-center space-x-2 text-sm text-green-400"><span>✅</span> <span id="fileName"></span></div></div>
+                    </div>
+                    <div class="text-center">
+                        <button type="submit" class="w-full md:w-auto px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                            ยืนยันการจอง
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Step 7: Confirmation -->
+            <section id="step7" class="hidden bg-[#161625] p-6 rounded-2xl shadow-xl text-center transition-colors duration-500 content-card">
+                <div class="max-w-2xl mx-auto">
+                    <div class="text-6xl mb-4">🎉</div>
+                    <h2 class="text-3xl font-bold mb-4 text-green-400 step-title">จองสำเร็จ!</h2>
+                    <p class="text-lg mb-6 text-gray-300 step-subtitle">ขอบคุณที่จองบัตรคอนเสิร์ต The 6th PSU WIT ORCHESTRA</p>
+                    <div class="summary-box bg-gray-800 p-6 rounded-lg mb-6 text-left">
+                        <h3 class="text-xl font-semibold mb-4 text-yellow-400">รายละเอียดการจอง</h3>
+                        <div id="confirmationDetails" class="space-y-3 text-sm"></div>
+                    </div>
+                    <div class="info-box bg-blue-900 p-4 rounded-lg mb-6">
+                        <h4 class="font-semibold mb-2 text-yellow-400">📧 ขั้นตอนต่อไป</h4>
+                        <div class="space-y-2 text-sm text-left info-text">
+                            <p><strong>1. ตรวจสอบการชำระเงิน:</strong> ⏳ เจ้าหน้าที่การเงินจะตรวจสอบยอดชำระของท่านภายใน 2 วันทำการ</p>
+                            <p><strong>2. อัปเดตสถานะ:</strong> 💳 เมื่อชำระเงินครบถ้วน สถานะที่นั่งของท่านจะถูกอัปเดตเป็น "ที่นั่งที่ชำระเงินแล้ว"</p>
+                            <p><strong>3. รับ E-Ticket:</strong> 🎫 ระบบจะส่ง E-Ticket พร้อม QR Code สำหรับเข้างานไปยังอีเมล <strong id="confirmedEmail" class="text-purple-400"></strong> โดยอัตโนมัติ</p>
+                            <p class="text-orange-500 pt-2 font-bold bg-yellow-100 p-2 rounded-md mt-2 text-center">
+                                ❗️สำคัญ: หากไม่พบอีเมล กรุณาตรวจสอบในโฟลเดเดอร์ "จดหมายขยะ" (Spam/Junk) และกด "ไม่ใช่จดหมายขยะ" เพื่อให้ครั้งต่อไปไม่พลาดการติดต่อ
+                            </p>
+                        </div>
+                    </div>
+                    <div class="eticket-box bg-green-900 p-4 rounded-lg mb-6">
+                        <h4 class="font-semibold mb-2 text-yellow-400">🎫 วิธีใช้ E-ticket</h4>
+                        <div class="space-y-1 text-sm">
+                            <p>1. เปิดอีเมล E-ticket ที่ได้รับ</p>
+                            <p>2. แสดง QR Code ในอีเมลหน้าประตูงาน</p>
+                            <p>3. เจ้าหน้าที่จะสแกน QR Code เพื่อเข้างาน</p>
+                            <p class="text-yellow-300">📱 สามารถบันทึกภาพ QR Code ไว้ในมือถือได้</p>
+                        </div>
+                    </div>
+                    <button onclick="startOver()" class="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg">จองบัตรใหม่</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Contact Button -->
+    <div class="fixed bottom-6 right-6 z-40">
+        <button onclick="openContactModal()" class="bg-green-500 hover:bg-green-600 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Contact Modal -->
+    <div id="contactModal" class="loading-overlay hidden">
+        <div class="contact-modal-content bg-[#161625] p-6 rounded-2xl shadow-lg w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-yellow-400 step-title">ติดต่อสอบถาม</h3>
+                <button onclick="closeContactModal()" class="text-gray-400 hover:text-white text-3xl font-light">&times;</button>
+            </div>
+            <div class="text-center">
+                <p class="text-gray-300 step-subtitle mb-4">สแกน QR Code เพื่อเพิ่มเพื่อนใน LINE Official</p>
+                <img src="https://i.postimg.cc/HWbxcyJ4/QR-Code-LINE.png" alt="LINE QR Code" class="w-48 h-48 mx-auto rounded-lg shadow-md border-4 border-white">
+            </div>
+        </div>
+    </div>
+
+    <!-- ⭐️ NEW: Message Modal (สำหรับแทนที่ alert) -->
+    <div id="messageModal" class="loading-overlay hidden">
+        <div class="contact-modal-content bg-white p-6 rounded-2xl shadow-lg w-full max-w-sm mx-4">
+            <!-- Icon (Success or Error) -->
+            <div id="messageIcon" class="modal-icon error">
+                <!-- Error Icon -->
+                <svg id="messageErrorIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <!-- Success Icon -->
+                <svg id="messageSuccessIcon" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            
+            <h3 id="messageTitle" class="text-xl font-bold text-center mb-2 text-slate-800"></h3>
+            <p id="messageText" class="text-center text-slate-600 mb-6"></p>
+
+            <button onclick="closeMessageModal()" class="w-full px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                ตกลง
+            </button>
+        </div>
+    </div>
+    <!-- ⭐️ END: Message Modal -->
+
+
+    <script>
+        // --- CONSTANTS & DATA ---
+        // ⭐️ URL ถูกอัปเดตแล้ว
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwzmDMiId-EAX1hvEn2AthEhXgVcaMoFShzHlK44o56rPtGD-hV-x9zXsJVYlqh88h2/exec';
+        
+        const zones = {
+            1: { name: 'โซน VIP', prices: { 1: 1000, 2: 1200 }, color: 'bg-blue-500' },
+            2: { name: 'โซน A', prices: { 1: 700, 2: 1000 }, color: 'bg-pink-500' },
+            3: { name: 'โซน B', prices: { 1: 500, 2: 700 }, color: 'bg-emerald-500' },
+            4: { name: 'โซน C', prices: { 1: 300, 2: 500 }, color: 'bg-orange-500' }
+        };
+        const vvipColor = 'bg-yellow-400';
+        const generateSeats = (prefix, start, end) => Array.from({ length: end - start + 1 }, (_, i) => `${prefix}-${String(start + i).padStart(3, '0')}`);
+        const seatBlocks = {
+            'VIP1': { zoneId: '1', seats: generateSeats('VIP', 1, 12), rows: 1 },
+            'VIP2': { zoneId: '1', seats: generateSeats('VIP', 13, 36), rows: 2 },
+            'VIP3': { zoneId: '1', seats: generateSeats('VIP', 37, 60), rows: 2 },
+            'VIP4': { zoneId: '1', seats: generateSeats('VIP', 61, 72), rows: 1 },
+            'A1': { zoneId: '2', seats: generateSeats('A', 1, 24), rows: 2 },
+            'A2': { zoneId: '2', seats: generateSeats('A', 25, 60), rows: 3 },
+            'A3': { zoneId: '2', seats: generateSeats('A', 61, 132), rows: 6 },
+            'A4': { zoneId: '2', seats: generateSeats('A', 133, 204), rows: 6 },
+            'A5': { zoneId: '2', seats: generateSeats('A', 205, 228), rows: 2 },
+            'A6': { zoneId: '2', seats: generateSeats('A', 229, 264), rows: 3 },
+            'B1': { zoneId: '3', seats: generateSeats('B', 1, 60), rows: 5 },
+            'B2': { zoneId: '3', seats: generateSeats('B', 61, 72), rows: 1 },
+            'B3': { zoneId: '3', seats: generateSeats('B', 73, 84), rows: 1 },
+            'B4': { zoneId: '3', seats: generateSeats('B', 85, 144), rows: 5 },
+            'C1': { zoneId: '4', seats: generateSeats('C', 1, 36), rows: 3 },
+            'C2': { zoneId: '4', seats: generateSeats('C', 37, 52), rows: 4 },
+            'C3': { zoneId: '4', seats: generateSeats('C', 53, 68), rows: 4 },
+            'C4': { zoneId: '4', seats: generateSeats('C', 69, 104), rows: 3 },
+            'VVIP': { zoneId: 'special', seats: generateSeats('VVIP', 1, 48), rows: 4 }
+        };
+        const seatingPlanImages = {
+            1: 'https://i.postimg.cc/s2kWXJF1/1.png',
+            2: 'https://i.postimg.cc/ZnqXHqhM/2.png'
+        };
+        const planLayout = [
+            { id: 'VIP1', gridArea: '2 / 1 / 3 / 3' },
+            { id: 'A1', gridArea: '3 / 1 / 5 / 3' },
+            { id: 'A2', gridArea: '5 / 1 / 8 / 3' },
+            { id: 'B1', gridArea: '8 / 1 / 13 / 3' },
+            { id: 'C1', gridArea: '13 / 1 / 16 / 3' },
+            
+            { id: 'VIP2', gridArea: '3 / 3 / 5 / 5' },
+            { id: 'A3', gridArea: '5 / 3 / 11 / 5' },
+            { id: 'B2', gridArea: '11 / 3 / 12 / 5' },
+            { id: 'C2', gridArea: '13 / 3 / 17 / 5' },
+            
+            { id: 'VVIP', gridArea: '13 / 5 / 17 / 7' },
+
+            { id: 'VIP3', gridArea: '3 / 7 / 5 / 9' },
+            { id: 'A4', gridArea: '5 / 7 / 11 / 9' },
+            { id: 'B3', gridArea: '11 / 7 / 12 / 9' },
+            { id: 'C3', gridArea: '13 / 7 / 17 / 9' },
+            
+            { id: 'VIP4', gridArea: '2 / 9 / 3 / 11' },
+            { id: 'A5', gridArea: '3 / 9 / 5 / 11' },
+            { id: 'A6', gridArea: '5 / 9 / 8 / 11' },
+            { id: 'B4', gridArea: '8 / 9 / 13 / 11' },
+            { id: 'C4', gridArea: '13 / 9 / 16 / 11' }
+        ];
+
+        // --- DOM Elements ---
+        let elements = {}; // Declare globally
+
+        // --- Global State ---
+        let state = { currentStep: 1, selectedRound: null, selectedBlockId: null, selectedSeats: [], liveAvailabilityByZone: {}, countdownInterval: null };
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Define/Populate the elements object *after* the DOM is loaded
+            elements = {
+                step1: document.getElementById('step1'), step2: document.getElementById('step2'),
+                step3: document.getElementById('step3'), step4: document.getElementById('step4'),
+                step5: document.getElementById('step5'), step7: document.getElementById('step7'), 
+                round1Btn: document.getElementById('round1Btn'), round2Btn: document.getElementById('round2Btn'),
+                seatingPlanOverview: document.getElementById('seatingPlanOverview'),
+                step2Title: document.getElementById('step2Title'),
+                step3Title: document.getElementById('step3Title'),
+                selectedBlockText: document.getElementById('selectedBlockText'),
+                selectedRoundText: document.getElementById('selectedRoundText'),
+                allSelectedRoundText: document.querySelectorAll('.selectedRoundText'), 
+                seatMapContainer: document.getElementById('seatMapContainer'),
+                seatMapFooter: document.getElementById('seatMapFooter'),
+                selectedCount: document.getElementById('selectedCount'),
+                continueToStep4: document.getElementById('continueToStep4'), 
+                
+                // ⭐️ NEW: Add Step 2 checkout button and counter
+                checkoutBtnStep2: document.getElementById('checkoutBtnStep2'),
+                cartCountStep2: document.getElementById('cartCountStep2'),
+
+                customerForm: document.getElementById('customerForm'),
+                orderSummary: document.getElementById('orderSummary'),
+                totalAmount: document.getElementById('totalAmount'),
+                paymentForm: document.getElementById('paymentForm'),
+                paymentTotalAmount: document.getElementById('paymentTotalAmount'),
+                paymentSlipInput: document.getElementById('paymentSlip'),
+                filePreview: document.getElementById('filePreview'),
+                fileName: document.getElementById('fileName'),
+                confirmationDetails: document.getElementById('confirmationDetails'),
+                confirmedEmail: document.getElementById('confirmedEmail'),
+                loadingOverlay: document.getElementById('loading-overlay'),
+                timerMessage: document.getElementById('timer-message'), 
+                countdownTimer: document.getElementById('countdown-timer'),
+                tooltip: document.getElementById('tooltip'),
+                tooltipTitle: document.getElementById('tooltip-title'),
+                tooltipPrice: document.getElementById('tooltip-price'),
+                contactModal: document.getElementById('contactModal'), // Added Contact Modal
+                
+                // ⭐️ NEW: Message Modal Elements
+                messageModal: document.getElementById('messageModal'),
+                messageIcon: document.getElementById('messageIcon'),
+                messageErrorIcon: document.getElementById('messageErrorIcon'),
+                messageSuccessIcon: document.getElementById('messageSuccessIcon'),
+                messageTitle: document.getElementById('messageTitle'),
+                messageText: document.getElementById('messageText'),
+
+                // ⭐️ MODIFIED: ลบ elements ของ Info Bar ออก
+                // seatHoverInfo: document.getElementById('seatHoverInfo'),
+                // seatHoverInfoText: document.getElementById('seatHoverInfoText'),
+
+                zoneRemaining: {
+                    1: document.getElementById('zone-1-remaining'),
+                    2: document.getElementById('zone-2-remaining'),
+                    3: document.getElementById('zone-3-remaining'),
+                    4: document.getElementById('zone-4-remaining')
+                },
+                legends: {
+                    available: document.getElementById('legend-available-count'),
+                    selected: document.getElementById('legend-selected-count'),
+                    booked: document.getElementById('legend-booked-count'),
+                    paid: document.getElementById('legend-paid-count')
+                }
+            };
+            
+            setTheme('neutral'); // MODIFIED: Start in neutral state
+            showStep(1); 
+             elements.paymentForm.addEventListener('submit', handlePaymentFormSubmit);
+            elements.paymentSlipInput.addEventListener('change', handleSlipInputChange);
+
+            // ⭐️ NEW: ป้องกันการปิดแท็บโดยไม่ตั้งใจ
+            window.addEventListener('beforeunload', (event) => {
+                if (state.countdownInterval) {
+                    // ถ้า timer กำลังทำงาน (คือมีการเลือกที่นั่งแล้ว)
+                    event.preventDefault();
+                    event.returnValue = 'คุณกำลังอยู่ในขั้นตอนการจอง, คุณแน่ใจหรือไม่ที่จะออกจากหน้านี้?';
+                }
+            });
+        });
+        
+        // --- Navigation ---
+        function showStep(stepNumber) {
+            state.currentStep = stepNumber;
+            document.querySelectorAll('main > section').forEach(el => {
+                if (el.id === `step${stepNumber}`) {
+                    el.classList.remove('hidden', 'opacity-0');
+                } else {
+                    el.classList.add('hidden', 'opacity-0');
+                }
+            });
+            window.scrollTo(0, 0); 
+        }
+
+        function goToStep(stepNumber) {
+            if (stepNumber === 5) {
+                // ⭐️ MODIFIED: ตรวจสอบฟอร์ม Step 4 ก่อนไป Step 5
+                if (!elements.customerForm.reportValidity()) {
+                    // ใช้ form validation ของเบราว์เซอร์เพื่อแสดงข้อความ
+                    // ถ้าต้องการ custom message box ให้ใช้ showMessage
+                    // showMessage('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลผู้จองให้ครบถ้วนถูกต้อง');
+                    return; // หยุดฟังก์ชัน ไม่ไปต่อ
+                }
+            }
+
+            showStep(stepNumber);
+            if (stepNumber === 2) {
+                initializeSeatingPlan();
+                elements.allSelectedRoundText.forEach(el => el.textContent = state.selectedRound === 1 ? '1 (กลางวัน)' : '2 (กลางคืน)');
+            } else if (stepNumber === 4) {
+                 populateStep4Form();
+            } else if (stepNumber === 5) {
+                // ย้าย check validity ไปด้านบน
+                populateStep5Form();
+            } else if (stepNumber === 7) {
+                populateStep7Confirmation();
+            }
+        }
+
+        function goBackToStep(stepNumber) {
+             if (stepNumber === 1) { 
+                 state = { currentStep: 1, selectedRound: null, selectedBlockId: null, selectedSeats: [], liveAvailabilityByZone: {}, countdownInterval: null };
+                 setTheme('neutral'); // MODIFIED: Reset to neutral theme
+             } else if (stepNumber === 2) { 
+                 // ⭐️ MODIFIED: DO NOT clear seats. Allow cross-zone booking.
+                 // state.selectedSeats = [];
+                 // stopTimer();
+                 // updateSelectedCountUI();
+                 // By leaving this block empty, timer continues and seats are kept.
+             } else if (stepNumber === 3) {
+                 if (state.selectedSeats.length > 0 && !state.countdownInterval) startTimer(); 
+             }
+             showStep(stepNumber);
+        }
+        
+        // ⭐️ FIX: Re-inserting missing function definitions that were lost
+        
+        // --- Contact Modal Functions ---
+        function openContactModal() {
+            if(elements.contactModal) elements.contactModal.classList.remove('hidden');
+        }
+        function closeContactModal() {
+            if(elements.contactModal) elements.contactModal.classList.add('hidden');
+        }
+
+        // ⭐️ NEW: Message Modal Functions (แทนที่ alert)
+        function showMessage(title, message, isError = true) {
+            if (!elements.messageModal) return;
+            elements.messageTitle.textContent = title;
+            elements.messageText.textContent = message;
+            
+            if (isError) {
+                elements.messageIcon.classList.remove('success');
+                elements.messageIcon.classList.add('error');
+                elements.messageErrorIcon.classList.remove('hidden');
+                elements.messageSuccessIcon.classList.add('hidden');
+            } else {
+                elements.messageIcon.classList.remove('error');
+                elements.messageIcon.classList.add('success');
+                elements.messageErrorIcon.classList.add('hidden');
+                elements.messageSuccessIcon.classList.remove('hidden');
+            }
+            
+            // ใช้ CSS ของ body ปัจจุบัน
+            const isDay = document.body.classList.contains('bg-f1f5f9');
+            const modalContent = elements.messageModal.querySelector('.contact-modal-content');
+            if (isDay) {
+                modalContent.classList.add('bg-white');
+                modalContent.classList.remove('bg-[#161625]');
+                elements.messageTitle.classList.add('text-slate-800');
+                elements.messageText.classList.add('text-slate-600');
+            } else {
+                modalContent.classList.remove('bg-white');
+                modalContent.classList.add('bg-[#161625]');
+                elements.messageTitle.classList.remove('text-slate-800');
+                elements.messageText.classList.remove('text-slate-600');
+            }
+
+            elements.messageModal.classList.remove('hidden');
+        }
+
+        function closeMessageModal() {
+            if(elements.messageModal) elements.messageModal.classList.add('hidden');
+        }
+
+
+        // --- Theme Management ---
+        function setTheme(theme) {
+            const isDay = theme === 'day';
+            
+            // FIXED Toggle Function
+            const toggle = (selector, dayClasses, nightClasses) => {
+                document.querySelectorAll(selector).forEach(el => {
+                    const day = dayClasses.split(' ').filter(Boolean);
+                    const night = nightClasses.split(' ').filter(Boolean);
+                    
+                    if (!el) return; 
+
+                    if (theme === 'day') { 
+                        night.forEach(c => el.classList.remove(c));
+                        day.forEach(c => el.classList.add(c));
+                    } else { // 'night' or 'neutral'
+                        day.forEach(c => el.classList.remove(c));
+                        night.forEach(c => el.classList.add(c));
+                    }
+                });
+            };
+            
+            toggle('body', 'bg-f1f5f9 text-slate-800', 'bg-[#1a1a2e] text-[#e0e0e0]');
+
+            const header = document.getElementById('header-banner');
+            if(header) {
+                if (isDay) {
+                    header.classList.remove('from-purple-800', 'via-blue-800', 'to-indigo-900');
+                    header.classList.add('from-amber-400', 'via-orange-400', 'to-rose-400');
+                } else {
+                    header.classList.remove('from-amber-400', 'via-orange-400', 'to-rose-400');
+                    header.classList.add('from-purple-800', 'via-blue-800', 'to-indigo-900');
+                }
+                header.querySelectorAll('h1, p').forEach(el => { 
+                    el.classList.toggle('text-slate-800', isDay); 
+                    el.classList.toggle('text-white', !isDay); 
+                });
+            }
+            
+            toggle('section', 'bg-white', 'bg-[#161625]');
+            toggle('.content-card', 'bg-white', 'bg-[#161625]'); // Ensure inner cards also toggle
+            
+            toggle('.step-title', 'text-purple-700', 'text-yellow-400');
+            toggle('.step-subtitle', 'text-slate-500', 'text-gray-300');
+            
+            toggle('input[type="text"], input[type="email"], input[type="tel"]', 'bg-slate-50 border-slate-300 text-slate-900', 'bg-gray-700 border-gray-600 text-white');
+            
+            toggle('.info-box', 'bg-sky-100', 'bg-blue-900');
+            toggle('.info-box h4', 'text-sky-800', 'text-yellow-400');
+            toggle('.info-box .info-text', 'text-slate-700', 'text-gray-300'); 
+            toggle('.info-box .link-text', 'text-blue-700', 'text-blue-300');
+
+            toggle('.summary-box', 'bg-slate-100', 'bg-gray-800');
+            toggle('.summary-box h3', 'text-purple-700', 'text-yellow-400');
+            toggle('.summary-box div, .summary-box p, .summary-box li, .summary-box strong', 'text-slate-700', 'text-gray-300');
+
+            
+            toggle('.total-text', 'text-green-600', 'text-green-400');
+            
+            toggle('.eticket-box', 'bg-emerald-100', 'bg-green-900');
+            toggle('.eticket-box h4', 'text-emerald-800', 'text-yellow-400');
+            toggle('.eticket-box div p', 'text-emerald-700', 'text-white');
+            toggle('.eticket-box div p.text-yellow-300, .eticket-box div p.text-amber-600', 'text-amber-600', 'text-yellow-300');
+            
+            toggle('.legend-seat-available', 'border-slate-800', 'border-white');
+
+             // Specific fixes for Step 1 Cards
+            const dayActive = 'round-card bg-white rounded-lg shadow-lg transition-all duration-300 cursor-pointer overflow-hidden ring-2 ring-yellow-500';
+            const dayInactive = 'round-card bg-white rounded-lg shadow-sm transition-all duration-300 cursor-pointer overflow-hidden opacity-60 hover:opacity-100 hover:shadow-lg hover:ring-2 hover:ring-yellow-500';
+            const nightActive = 'round-card bg-gray-700 rounded-lg shadow-lg transition-all duration-300 cursor-pointer overflow-hidden ring-2 ring-yellow-500';
+            const nightInactive = 'round-card bg-gray-700 rounded-lg shadow-sm transition-all duration-300 cursor-pointer overflow-hidden opacity-60 hover:opacity-100 hover:shadow-lg hover:ring-2 hover:ring-yellow-500';
+            const neutralInactive = 'round-card bg-gray-700 rounded-lg shadow-sm transition-all duration-300 cursor-pointer overflow-hidden hover:shadow-lg hover:ring-2 hover:ring-yellow-500';
+
+
+            if (theme === 'day') {
+                elements.round1Btn.className = dayActive;
+                elements.round2Btn.className = dayInactive;
+            } else if (theme === 'night') {
+                elements.round1Btn.className = nightInactive;
+                elements.round2Btn.className = nightActive;
+            } else { // 'neutral'
+                elements.round1Btn.className = neutralInactive;
+                elements.round2Btn.className = neutralInactive;
+            }
+            
+            toggle('#round1Btn h3, #round2Btn h3', 'text-slate-800', 'text-white');
+            toggle('#round1Btn p, #round2Btn p', 'text-slate-500', 'text-gray-300');
+            toggle('#round1Btn img, #round2Btn img', 'border-slate-200', 'border-gray-600');
+
+            // Fix for confirmation page text
+            toggle('#step7 p.step-subtitle', 'text-slate-600', 'text-gray-300');
+            toggle('#step7 h2.step-title', 'text-green-600', 'text-green-400');
+            toggle('#confirmedEmail', 'text-purple-700', 'text-purple-400');
+            
+            // Back buttons
+            toggle('.back-button', 'hover:bg-slate-200', 'hover:bg-gray-700');
+            toggle('.back-button svg', 'text-slate-500 hover:text-purple-600', 'text-gray-400 hover:text-white');
+
+            // Form labels
+            toggle('.form-label', 'text-slate-600', 'text-gray-300');
+
+            // Stage bar
+            toggle('.stage-bar', 'bg-purple-700', 'bg-purple-700');
+            toggle('.plan-bg', 'bg-slate-100', 'bg-gray-800');
+            
+            // Step 2 & 3 legends
+            toggle('.legend-text', 'text-slate-600', 'text-gray-300');
+            
+            // Contact Modal
+            toggle('.contact-modal-content', 'bg-white', 'bg-[#161625]');
+        }
+
+
+        // --- Step 1: Round Selection ---
+        function selectRound(round) {
+            state.selectedRound = round;
+            setTheme(round === 1 ? 'day' : 'night');
+            goToStep(2);
+        }
+        
+        // --- Step 2: Seating Plan Overview ---
+        async function initializeSeatingPlan() {
+            const overviewContainer = elements.seatingPlanOverview;
+            overviewContainer.innerHTML = '<div class="flex justify-center items-center h-48"><div class="spinner"></div></div>'; // Show spinner
+            
+            // Fetch availability data for ALL zones
+            try {
+                if (WEB_APP_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL')) {
+                    console.warn("WebApp URL not set. Using empty seat data.");
+                    state.liveAvailabilityByZone = {}; // Use empty data for demo
+                } else {
+                    const response = await fetch(`${WEB_APP_URL}?round=${state.selectedRound}`); 
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    state.liveAvailabilityByZone = await response.json(); // Expects { "1": {...}, "2": {...} }
+                }
+            } catch (error) {
+                console.error('Error fetching all zone status:', error);
+                // ⭐️ MODIFIED: ใช้ showMessage แทน alert
+                showMessage('เกิดข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลสถานะที่นั่งรวมได้');
+                state.liveAvailabilityByZone = {}; // Fallback
+            } 
+            
+            // --- Build Grid AFTER data is fetched ---
+            overviewContainer.innerHTML = ''; // Clear spinner
+            
+            const gridContainer = document.createElement('div');
+            gridContainer.className = 'grid gap-1 md:gap-2 w-full max-w-4xl mx-auto';
+            gridContainer.style.gridTemplateColumns = 'repeat(10, minmax(0, 1fr))';
+            gridContainer.style.gridTemplateRows = 'repeat(15, minmax(20px, auto))'; // 15 rows
+
+            // Create Stage
+            const stageBar = document.createElement('div');
+            stageBar.className = 'stage-bar bg-purple-700 text-white text-center py-2 rounded-lg font-bold text-xs md:text-sm tracking-widest flex items-center justify-center';
+            stageBar.style.gridColumn = '1 / -1'; // Span all 10 columns
+            stageBar.style.gridRow = '1 / 2'; // Place in row 1
+            stageBar.textContent = 'STAGE';
+            overviewContainer.appendChild(stageBar);
+
+            const createBlock = (blockId) => {
+                const blockInfo = seatBlocks[blockId];
+                if (!blockInfo) return null;
+
+                const isVVIP = blockInfo.zoneId === 'special';
+                const zoneInfo = zones[blockInfo.zoneId];
+                
+                const blockDiv = document.createElement('div');
+                blockDiv.className = `plan-block p-2 rounded-lg text-white text-center font-bold shadow-md`;
+                
+                let color = isVVIP ? vvipColor : (zoneInfo ? zoneInfo.color : 'bg-gray-400');
+                
+                if (zoneInfo) { 
+                     color = { '1': 'bg-blue-500', '2': 'bg-pink-500', '3': 'bg-emerald-500', '4': 'bg-orange-500' }[blockInfo.zoneId] || color;
+                }
+                
+                blockDiv.classList.add(color);
+
+                if (isVVIP) {
+                    blockDiv.classList.add('cursor-not-allowed', 'opacity-70');
+                } else {
+                    blockDiv.classList.add('cursor-pointer');
+                    blockDiv.onclick = () => handleBlockClick(blockId);
+                    
+                    const price = zoneInfo.prices[state.selectedRound];
+                    blockDiv.onmouseover = (e) => {
+                        elements.tooltipTitle.textContent = `${blockId} (${zoneInfo.name})`;
+                        elements.tooltipPrice.textContent = `${price.toLocaleString()} บาท`;
+                        elements.tooltip.style.left = `${e.pageX + 10}px`;
+                        elements.tooltip.style.top = `${e.pageY + 10}px`;
+                        elements.tooltip.classList.remove('hidden');
+                    };
+                    blockDiv.onmousemove = (e) => {
+                        elements.tooltip.style.left = `${e.pageX + 10}px`;
+                        elements.tooltip.style.top = `${e.pageY + 10}px`;
+                    };
+                    blockDiv.onmouseout = () => {
+                        elements.tooltip.classList.add('hidden');
+                    };
+                }
+                
+                blockDiv.textContent = blockId;
+                return blockDiv;
+            };
+            
+            // Map blocks to their grid areas
+            planLayout.forEach(item => {
+                const blockDiv = createBlock(item.id);
+                if(blockDiv) {
+                    blockDiv.style.gridArea = item.gridArea;
+                    gridContainer.appendChild(blockDiv);
+                }
+            });
+            
+            overviewContainer.appendChild(gridContainer);
+
+            updateZoneLegend(); // Update legend with counts
+        }
+
+        function updateZoneLegend() {
+            Object.keys(zones).forEach(zoneId => {
+                const unavailableForZone = state.liveAvailabilityByZone[zoneId] || { booked: [], paid: [] };
+                const totalSeatsInZone = Object.values(seatBlocks)
+                    .filter(block => block.zoneId === zoneId)
+                    .reduce((sum, block) => sum + block.seats.length, 0);
+                
+                const bookedCount = unavailableForZone.booked?.length || 0;
+                const paidCount = unavailableForZone.paid?.length || 0;
+                const remaining = totalSeatsInZone - bookedCount - paidCount;
+                
+                const el = document.getElementById(`zone-${zoneId}-remaining`);
+                if (el) el.textContent = `${remaining} ที่นั่ง`;
+            });
+        }
+
+
+        function handleBlockClick(blockId) {
+            state.selectedBlockId = blockId;
+            goToStep(3);
+            openSeatMap(blockId); 
+        }
+
+        // --- Step 3: Select Seats ---
+        async function openSeatMap(blockId) {
+            const blockInfo = seatBlocks[blockId];
+            state.currentZoneId = blockInfo.zoneId; 
+            elements.step3Title.textContent = `3. เลือกที่นั่ง (${blockId})`;
+            elements.selectedBlockText.textContent = blockId;
+             elements.allSelectedRoundText.forEach(el => el.textContent = state.selectedRound === 1 ? '1 (กลางวัน)' : '2 (กลางคืน)');
+            
+            // MODIFIED: No fetch needed, use pre-fetched data
+            state.liveUnavailableSeats = state.liveAvailabilityByZone[state.currentZoneId] || { booked: [], paid: [] };
+            
+            generateDetailedSeatMap(blockId); // This will now use the correct data
+            if (state.selectedSeats.length === 0 && !state.countdownInterval) startTimer();
+        }
+
+        function generateDetailedSeatMap(blockId) {
+            const container = elements.seatMapContainer;
+            container.innerHTML = '';
+            const blockInfo = seatBlocks[blockId];
+            const zoneId = blockInfo.zoneId;
+            const grid = document.createElement('div');
+            grid.className = 'grid gap-1 justify-center';
+            const seatsPerRow = blockId.includes('C2') || blockId.includes('C3') ? 4 : 12;
+            grid.style.gridTemplateColumns = `repeat(${seatsPerRow}, minmax(0, 1fr))`;
+            blockInfo.seats.forEach(seatId => {
+                const seatDiv = createSeatDiv(zoneId, seatId);
+                grid.appendChild(seatDiv);
+            });
+            container.appendChild(grid);
+            updateSeatMapLegend(blockId); // Call legend update
+        }
+
+        // --- ⭐️ END: Re-inserted functions ---
+        
+        // ⭐️ MODIFIED: Added hover events for tooltip and info bar
+        function createSeatDiv(zoneId, seatId) {
+             const unavailable = state.liveUnavailableSeats || { booked: [], paid: [] }; 
+             const seatDiv = document.createElement('div');
+             seatDiv.className = 'seat';
+             seatDiv.textContent = seatId;
+             seatDiv.dataset.seatId = seatId;
+             seatDiv.dataset.zoneId = zoneId;
+
+             const isBooked = (unavailable.booked || []).includes(seatId);
+             const isPaid = (unavailable.paid || []).includes(seatId);
+
+             if (isBooked) {
+                 seatDiv.classList.add('unavailable');
+             } else if (isPaid) {
+                 seatDiv.classList.add('paid');
+             } else {
+                 // Seat is available OR selected, add click and hover events
+                 seatDiv.onclick = () => toggleSeat(seatDiv, zoneId, seatId);
+                
+                 const zoneInfo = zones[zoneId];
+                 const price = zoneInfo.prices[state.selectedRound];
+
+                 seatDiv.onmouseover = (e) => {
+                     // 1. Update Tooltip (Popup)
+                     elements.tooltipTitle.textContent = seatId;
+                     elements.tooltipPrice.textContent = `${price.toLocaleString()} บาท`;
+                     elements.tooltip.style.left = `${e.pageX + 10}px`;
+                     elements.tooltip.style.top = `${e.pageY + 10}px`;
+                     elements.tooltip.classList.remove('hidden');
+                     
+                     // 2. ⭐️ MODIFIED: ลบการอัปเดต Bottom Bar ออก
+                     // elements.seatHoverInfoText.textContent = `ที่นั่ง: ${seatId} (${zoneInfo.name}) - ราคา: ${price.toLocaleString()} บาท`;
+                 };
+                 seatDiv.onmousemove = (e) => {
+                     elements.tooltip.style.left = `${e.pageX + 10}px`;
+                     elements.tooltip.style.top = `${e.pageY + 10}px`;
+                 };
+                 seatDiv.onmouseout = () => {
+                     // 1. Hide Tooltip
+                     elements.tooltip.classList.add('hidden');
+                     
+                     // 2. ⭐️ MODIFIED: ลบการรีเซ็ต Bottom Bar ออก
+                     // elements.seatHoverInfoText.textContent = 'ชี้ที่นั่งเพื่อดูรายละเอียด';
+                 };
+             }
+
+             if (state.selectedSeats.find(s => s.seatId === seatId)) {
+                 seatDiv.classList.add('selected');
+             }
+             return seatDiv;
+         }
+
+        function toggleSeat(seatElement, zoneId, seatId) {
+            const existingIndex = state.selectedSeats.findIndex(s => s.seatId === seatId);
+            if (existingIndex >= 0) {
+                state.selectedSeats.splice(existingIndex, 1);
+                seatElement.classList.remove('selected');
+            } else {
+                state.selectedSeats.push({ zoneId, seatId, zoneName: zones[zoneId].name, price: zones[zoneId].prices[state.selectedRound] });
+                seatElement.classList.add('selected');
+            }
+            updateSelectedCountUI();
+            updateSeatMapLegend(state.selectedBlockId); // Update legend counts
+        }
+
+        function updateSelectedCountUI() {
+            const count = state.selectedSeats.length;
+
+            // Control Step 3 button
+            elements.selectedCount.textContent = count;
+            elements.continueToStep4.disabled = count === 0;
+
+            // ⭐️ NEW: Control Step 2 button
+            if (elements.checkoutBtnStep2) {
+                elements.cartCountStep2.textContent = count;
+                elements.checkoutBtnStep2.disabled = count === 0;
+            }
+
+            if (count > 0 && !state.countdownInterval) {
+                 startTimer();
+            } else if (count === 0 && state.countdownInterval) {
+                 stopTimer(); 
+            }
+        }
+        
+        function updateSeatMapLegend(blockId) {
+            if (!blockId || !state.selectedRound || !elements.legends.available) return;
+
+            const blockInfo = seatBlocks[blockId];
+            if (!blockInfo) return; 
+            
+            const totalSeats = blockInfo.seats.length;
+            const unavailable = state.liveUnavailableSeats || { booked: [], paid: [] }; 
+
+            const bookedCount = (unavailable.booked || []).filter(seatId => blockInfo.seats.includes(seatId)).length;
+            const paidCount = (unavailable.paid || []).filter(seatId => blockInfo.seats.includes(seatId)).length;
+            
+            const selectedInBlockCount = state.selectedSeats.filter(seat => blockInfo.seats.includes(seat.seatId)).length;
+            
+            const availableCount = totalSeats - bookedCount - paidCount - selectedInBlockCount;
+
+            elements.legends.available.textContent = availableCount;
+            elements.legends.selected.textContent = selectedInBlockCount;
+            elements.legends.booked.textContent = bookedCount;
+            elements.legends.paid.textContent = paidCount;
+        }
+
+        // --- Step 4: Customer Info ---
+        function populateStep4Form() {
+            elements.orderSummary.innerHTML = ''; 
+            let total = 0;
+            const seatsByZone = state.selectedSeats.reduce((acc, seat) => {
+                if (!acc[seat.zoneName]) acc[seat.zoneName] = [];
+                acc[seat.zoneName].push(seat.seatId);
+                total += seat.price;
+                return acc;
+            }, {});
+            let summaryHtml = '';
+            Object.entries(seatsByZone).forEach(([zoneName, seatIds]) => {
+                const zone = Object.values(zones).find(z => z.name === zoneName) || { prices: { [state.selectedRound]: 0 } };
+                const price = zone.prices[state.selectedRound];
+                summaryHtml += `
+                    <div class="flex justify-between items-start mb-2 text-sm">
+                        <div>
+                            <p class="font-medium text-base">${zoneName} (${seatIds.length} ที่นั่ง)</p>
+                            <p class="text-xs break-all">${seatIds.join(', ')}</p>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-4">
+                            <p>${(seatIds.length * price).toLocaleString()} บาท</p>
+                        </div>
+                    </div>`;
+            });
+            summaryHtml += `<div class="text-sm mt-3 pt-3 border-t border-gray-600 summary-box"><strong>รอบการแสดง:</strong> รอบที่ ${state.selectedRound} ${state.selectedRound === 1 ? '(13:30-16:00)' : '(18:30-21:00)'}</div>`;
+            elements.orderSummary.innerHTML = summaryHtml;
+            elements.totalAmount.textContent = `${total.toLocaleString()} บาท`;
+        }
+
+
+        // --- Step 5: Payment ---
+        function populateStep5Form() {
+             const total = state.selectedSeats.reduce((sum, seat) => sum + seat.price, 0);
+             elements.paymentTotalAmount.textContent = `${total.toLocaleString()} บาท`;
+             elements.filePreview.classList.add('hidden');
+             elements.fileName.textContent = '';
+             elements.paymentSlipInput.value = ''; 
+        }
+
+        function handleSlipInputChange(e) {
+             const file = e.currentTarget.files[0];
+            if (file) {
+                // ⭐️ MODIFIED: ใช้ showMessage แทน alert
+                if (file.size > 5 * 1024 * 1024) { 
+                    showMessage('ไฟล์มีขนาดใหญ่', 'ไฟล์มีขนาดใหญ่เกิน 5MB กรุณาเลือกไฟล์ใหม่'); 
+                    e.currentTarget.value = ''; 
+                    return; 
+                }
+                elements.fileName.textContent = file.name;
+                elements.filePreview.classList.remove('hidden');
+            } else { elements.filePreview.classList.add('hidden'); }
+        }
+
+        async function handlePaymentFormSubmit(event) {
+            event.preventDefault();
+            elements.loadingOverlay.classList.remove('hidden');
+            if (WEB_APP_URL.includes('YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL')) {
+                console.warn('WebApp URL not set. Simulating form submission.');
+                setTimeout(() => { goToStep(7); elements.loadingOverlay.classList.add('hidden'); }, 1500); 
+                return;
+            }
+            const file = elements.paymentSlipInput.files[0];
+            if (!file) { 
+                // ⭐️ MODIFIED: ใช้ showMessage แทน alert
+                showMessage('ข้อมูลไม่ครบ', 'กรุณาแนบสลิปการชำระเงิน'); 
+                elements.loadingOverlay.classList.add('hidden'); 
+                return; 
+            }
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const [fileInfo, base64] = reader.result.split(',');
+                const formData = {
+                    firstName: document.getElementById('firstName').value, lastName: document.getElementById('lastName').value,
+                    email: document.getElementById('email').value, phone: document.getElementById('phone').value,
+                    round: state.selectedRound, seats: JSON.stringify(state.selectedSeats),
+                    total: state.selectedSeats.reduce((sum, seat) => sum + seat.price, 0),
+                    paymentSlip: { mimeType: file.type, fileName: file.name, base64 }
+                };
+                try {
+                    // ⭐️ MODIFIED: ลบ mode: 'no-cors' และอ่าน Response จาก Server
+                    const response = await fetch(WEB_APP_URL, { 
+                        method: 'POST', 
+                        body: JSON.stringify(formData), 
+                        headers: { 'Content-Type': 'application/json' }
+                        // mode: 'no-cors' <-- REMOVED
+                    });
+
+                    // ⭐️ MODIFIED: อ่าน JSON response
+                    let result;
+                    try {
+                        result = await response.json();
+                    } catch (jsonError) {
+                        // ถ้า server ตอบกลับมาไม่ใช่ JSON (เช่น HTML error page)
+                        throw new Error(`Server returned non-JSON response: ${response.statusText}`);
+                    }
+
+
+                    if (result.status === 'success') {
+                        goToStep(7); // ไปหน้าจองสำเร็จ
+                    } else {
+                        // ถ้า Server ตอบว่า error (เช่น ที่นั่งเต็ม)
+                        throw new Error(result.message || 'การจองล้มเหลว ไม่ทราบสาเหตุ');
+                    }
+                } catch (error) { 
+                    console.error('Error submitting form:', error); 
+                    // ⭐️ MODIFIED: ใช้ showMessage แทน alert และแสดง error
+                    showMessage('เกิดข้อผิดพลาด', 'การจองล้มเหลว: ' + error.message);
+                } finally { 
+                    elements.loadingOverlay.classList.add('hidden'); 
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Step 7: Confirmation ---
+        function populateStep7Confirmation() {
+             stopTimer(); 
+             const fName = document.getElementById('firstName').value; 
+             const lName = document.getElementById('lastName').value;
+             const email = document.getElementById('email').value; 
+             const phone = document.getElementById('phone').value;
+             let total = state.selectedSeats.reduce((sum, seat) => sum + seat.price, 0);
+             const seatsByZone = state.selectedSeats.reduce((acc, seat) => { 
+                 (acc[seat.zoneName] = acc[seat.zoneName] || []).push(seat.seatId); 
+                 return acc; 
+             }, {});
+             let seatDetailsHtml = Object.entries(seatsByZone)
+                 .map(([zoneName, seatIds]) => `<li><strong>${zoneName}:</strong> ${seatIds.join(', ')}</li>`)
+                 .join('');
+             let html = `
+                 <div class="space-y-3 text-sm">
+                     <p><strong>ชื่อ-นามสกุล:</strong> ${fName} ${lName}</p>
+                     <p><strong>อีเมล:</strong> ${email}</p>
+                     <p><strong>เบอร์โทรศัพท์:</strong> ${phone}</p>
+                     <p><strong>รอบการแสดง:</strong> รอบที่ ${state.selectedRound} ${state.selectedRound === 1 ? '(13:30-16:00)' : '(18:30-21:00)'}</p>
+                     <div class="pt-2 border-t border-slate-300">
+                         <p><strong>ที่นั่งที่เลือก (${state.selectedSeats.length} ที่นั่ง):</strong></p>
+                         <ul class="list-disc list-inside pl-2">${seatDetailsHtml}</ul>
+                     </div>
+                     <p class="total-text text-lg font-bold pt-2 border-t border-slate-300"><strong>ยอดรวม:</strong> ${total.toLocaleString()} บาท</p>
+                 </div>`;
+            elements.confirmationDetails.innerHTML = html;
+            elements.confirmedEmail.textContent = email;
+        }
+
+        function startOver() {
+             state = { currentStep: 1, selectedRound: null, selectedBlockId: null, selectedSeats: [], liveAvailabilityByZone: {}, countdownInterval: null };
+             elements.customerForm.reset(); 
+             elements.paymentForm.reset(); 
+             elements.filePreview.classList.add('hidden'); 
+             elements.fileName.textContent = '';
+             goToStep(1); 
+             setTheme('neutral'); // MODIFIED: Reset to neutral theme
+        }
+
+        // --- Timer Functions ---
+        function startTimer() {
+            if (state.countdownInterval) clearInterval(state.countdownInterval);
+            elements.timerMessage.classList.remove('hidden');
+            setTimeout(() => elements.timerMessage.classList.remove('opacity-0'), 10);
+            let timeRemaining = 15 * 60; // 15 minutes
+            state.countdownInterval = setInterval(() => {
+                timeRemaining--;
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                elements.countdownTimer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                if (timeRemaining <= 0) {
+                    clearInterval(state.countdownInterval);
+                    // ⭐️ MODIFIED: ใช้ showMessage แทน alert (isError = false)
+                    showMessage('หมดเวลา', 'หมดเวลาในการจองแล้ว กรุณาเลือกที่นั่งใหม่อีกครั้ง', false);
+                    // Reset selection in the current step (Step 3)
+                    state.selectedSeats = [];
+                    updateSelectedCountUI();
+                    generateDetailedSeatMap(state.selectedBlockId); // Redraw seats
+                    stopTimer(); 
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (state.countdownInterval) clearInterval(state.countdownInterval);
+            state.countdownInterval = null;
+            elements.timerMessage.classList.add('opacity-0');
+            setTimeout(() => elements.timerMessage.classList.add('hidden'), 300); // Hide after fade out
+        }
+        
+    </script>
+</body>
+</html>
